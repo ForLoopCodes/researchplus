@@ -123,14 +123,17 @@ Context loss is expected. When the context window compacts or the session pauses
 Execution loop:
 1. Inspect the current project state and generate exactly 10 distinct ideas.
 2. Search searchthearxiv first for discovery and evidence verification.
-3. Ensure the project root has a research/ folder before any work begins, then use research/ideas/, research/evidence/, research/checkpoints/current.md, research/queues/live.md, and research/templates/ consistently.
-4. Write one markdown memory file per idea in research/ideas/ with concept, paper IDs, citations, findings, implementation strategy, and test outcome.
-5. Keep supporting passages, snippets, and extracted source notes in research/evidence/ when the idea needs more than the summary can hold.
-6. Maintain a live task queue in research/queues/live.md with at least 200 queued micro-tasks overnight, updating automatically (a few in the beginning, then add more as the session progresses, summing up to 200-1000), and schedule them round robin across discovery, evidence, implementation, validation, and cleanup.
-7. Keep the live checkpoint in research/checkpoints/current.md and refresh it together with the queue before and after each meaningful work burst so the session can resume after compaction without rereading everything.
-8. Implement the best candidate ideas as proof-of-concept changes and validate them immediately.
-9. If an idea fails, record the failure reason and evidence in research/evidence/ or the idea note before moving on.
-10. After every batch of 10 ideas, summarize results, rank the ideas, update the checkpoint and queue, and continue with the next 10.
+3. Read full paper text for every shortlisted paper using read_paper_text before implementation.
+4. Extract concrete methods, formulas, thresholds, and constraints from full text into evidence notes.
+5. Implement only after full-text evidence is captured and cited in research artifacts.
+6. Ensure the project root has a research/ folder before any work begins, then use research/ideas/, research/evidence/, research/checkpoints/current.md, research/queues/live.md, and research/templates/ consistently.
+7. Write one markdown memory file per idea in research/ideas/ with concept, paper IDs, citations, findings, implementation strategy, and test outcome.
+8. Keep supporting passages, snippets, and extracted source notes in research/evidence/ when the idea needs more than the summary can hold.
+9. Maintain a live task queue in research/queues/live.md with at least 200 queued micro-tasks overnight, updating automatically (a few in the beginning, then add more as the session progresses, summing up to 200-1000), and schedule them round robin across discovery, evidence, implementation, validation, and cleanup.
+10. Keep the live checkpoint in research/checkpoints/current.md and refresh it together with the queue before and after each meaningful work burst so the session can resume after compaction without rereading everything.
+11. Implement the best candidate ideas as proof-of-concept changes and validate them immediately.
+12. If an idea fails, record the failure reason and evidence in research/evidence/ or the idea note before moving on.
+13. After every batch of 10 ideas, summarize results, rank the ideas, update the checkpoint and queue, and continue with the next 10.
 
 Hard constraints:
 - Never ask the user for permission, clarification, or confirmation during execution.
@@ -139,6 +142,7 @@ Hard constraints:
 - Always keep the checkpoint small, structured, and current so it can survive compaction.
 - Always keep the queue broad but on-theme; if a file reveals a required fix, add it to the queue without drifting off topic.
 - Prefer peer-reviewed, highly cited, and methodologically strong papers when available.
+- Never implement from title/abstract alone when full paper text is available.
 - Reject unsupported claims and document evidence before implementation.
 - Keep iterating until explicitly stopped.
 

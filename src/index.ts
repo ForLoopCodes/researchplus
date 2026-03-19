@@ -44,6 +44,52 @@ const registerTextResource = (server: McpServer, name: string, uri: string, titl
   );
 };
 
+const decodeHtmlEntities = (text: string): string =>
+  text
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+
+const htmlToText = (html: string): string =>
+  decodeHtmlEntities(
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+
+const extractArxivId = (identifier: string): string | null => {
+  const normalized = identifier.trim();
+  const directMatch = normalized.match(/\b\d{4}\.\d{4,5}(?:v\d+)?\b/i);
+  if (directMatch?.[0]) return directMatch[0];
+  const absMatch = normalized.match(/arxiv\.org\/(?:abs|pdf|html)\/([^/?#]+)/i);
+  if (absMatch?.[1]) return absMatch[1].replace(/\.pdf$/i, "");
+  return null;
+};
+
+const fetchPaperText = async (identifier: string): Promise<{ arxivId: string; sourceUrl: string; text: string } | null> => {
+  const arxivId = extractArxivId(identifier);
+  if (!arxivId) return null;
+  const urls = [`https://arxiv.org/html/${arxivId}`, `https://arxiv.org/abs/${arxivId}`];
+  for (const sourceUrl of urls) {
+    try {
+      const response = await fetch(sourceUrl, { headers: { accept: "text/html" } });
+      if (!response.ok) continue;
+      const html = await response.text();
+      const text = htmlToText(html);
+      if (text.length >= 1000) return { arxivId, sourceUrl, text };
+    } catch {
+      continue;
+    }
+  }
+  return null;
+};
+
 const server = new McpServer(
   {
     name: "researchplus",
@@ -136,6 +182,57 @@ server.registerTool(
         {
           type: "text" as const,
           text: formatToolOutput("search_literature payload", normalized)
+        }
+      ],
+      structuredContent: normalized
+    };
+  }
+);
+
+server.registerTool(
+  "read_paper_text",
+  {
+    title: "Read Paper Text",
+    description: "Fetch and convert full arXiv paper HTML to plain text for evidence-backed implementation",
+    inputSchema: z.object({
+      identifier: z.string().min(1),
+      offset: z.number().int().min(0).optional(),
+      maxChars: z.number().int().min(500).max(100000).optional()
+    })
+  },
+  async ({ identifier, offset, maxChars }) => {
+    const paper = await fetchPaperText(identifier);
+    if (!paper) {
+      return toolError(404, "Unable to fetch paper text from arXiv", {
+        identifier,
+        hint: "Pass an arXiv ID like 2411.05930 or an arxiv.org URL"
+      });
+    }
+
+    const start = Math.max(0, offset ?? 0);
+    const size = Math.max(500, maxChars ?? 20000);
+    const excerpt = paper.text.slice(start, start + size);
+    const normalized = {
+      identifier,
+      arxivId: paper.arxivId,
+      sourceUrl: paper.sourceUrl,
+      offset: start,
+      maxChars: size,
+      returnedChars: excerpt.length,
+      totalChars: paper.text.length,
+      nextOffset: start + size < paper.text.length ? start + size : null,
+      text: excerpt
+    };
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `Read ${excerpt.length} characters from arXiv paper ${paper.arxivId}`
+        },
+        {
+          type: "text" as const,
+          text: formatToolOutput("read_paper_text payload", normalized)
         }
       ],
       structuredContent: normalized

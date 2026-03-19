@@ -29,6 +29,22 @@ export type SearchTheArxivPaper = {
   authors_parsed?: string[];
 };
 
+export type EnhancedPaper = SearchTheArxivPaper & {
+  consolidatedScore: number;
+  sourceQueries: string[];
+  authorCredibility: number;
+  temporalBoost: number;
+  confidence: number;
+  diversityPenalty?: number;
+  keywords?: string[];
+  provenanceVariant?: string;
+  snippet?: string;
+  field?: string;
+  methodology?: string;
+  freshnessScore?: number;
+  rankingExplanation?: string;
+};
+
 export type SearchTheArxivAuthor = {
   author: string;
   papers?: SearchTheArxivPaper[];
@@ -40,6 +56,12 @@ export type SearchTheArxivResult = {
   authors?: SearchTheArxivAuthor[];
 };
 
+export type SearchFacets = {
+  years: Record<number, number>;
+  authorCounts: Record<string, number>;
+  topAuthors: string[];
+};
+
 export type SearchHealth = {
   cacheHit: boolean;
   fallbackUsed: boolean;
@@ -48,6 +70,26 @@ export type SearchHealth = {
   retried: boolean;
   emptyResults: boolean;
   queryUsed: string;
+  circuitState?: "closed" | "open" | "half-open";
+  degradedMode?: boolean;
+  feedbackApplied?: boolean;
+  feedbackKeywords?: string[];
+  parallelExecution?: boolean;
+  recencyApplied?: boolean;
+  rateLimited?: boolean;
+  mmrApplied?: boolean;
+  suggestedQueries?: string[];
+  facets?: SearchFacets;
+  sessionContext?: boolean;
+  queryComplexity?: "simple" | "moderate" | "complex";
+  earlyExit?: boolean;
+  semanticCacheHit?: boolean;
+  topicClusters?: Record<string, string[]>;
+  variantEffectiveness?: Record<string, number>;
+  typoCorrections?: string[];
+  acronymsExpanded?: boolean;
+  queryScope?: "broad" | "narrow" | "moderate";
+  methodologyGroups?: Record<string, string[]>;
 };
 
 export type SearchTheArxivToolData = {
