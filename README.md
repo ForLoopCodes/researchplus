@@ -1,6 +1,6 @@
 # researchplus MCP server
 
-searchthearxiv-first MCP server for autonomous overnight research loops.
+MCP server for autonomous overnight research loops.
 
 ## What this server exposes
 
@@ -43,7 +43,3 @@ Unauthenticated requests also work with lower service limits from Semantic Schol
 For development:
 
 - `npm run dev`
-
-## VS Code MCP config
-
-`mcp.json` is included and points to `./build/index.js` via stdio.
