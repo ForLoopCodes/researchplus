@@ -56,6 +56,15 @@ const cache = new Map<string, CacheEntry>();
 const apiRetryCount = 3;
 const apiRetryBaseDelayMs = 1000;
 
+const researchFolderGuide = `# Research folder map
+
+- research/ideas/ — one markdown note per idea, keep numbered filenames.
+- research/evidence/ — short source notes, snippets, and supporting passages.
+- research/checkpoints/current.md — compact live state for resume-after-compaction.
+- research/queues/live.md — rotating micro-task queue in round-robin order.
+- research/templates/ — reusable markdown templates for new notes.
+`;
+
 const checkpointTemplate = `# Research Session Checkpoint
 
 ## Goal
@@ -110,18 +119,19 @@ Context loss is expected. When the context window compacts or the session pauses
 Execution loop:
 1. Inspect the current project state and generate exactly 10 distinct ideas.
 2. Search searchthearxiv first for discovery, then use Semantic Scholar only for detail gaps, citation graphs, or exact passage verification.
-3. Ensure the project root has a research/ folder before any work begins.
-4. Write one markdown memory file per idea in research/ with concept, paper IDs, citations, findings, implementation strategy, and test outcome.
-5. Maintain a live task queue with at least 200 queued micro-tasks overnight, updating automatically (a few in the beginning, then add more as the session progresses, summing up to 200-1000), and schedule them round robin across discovery, evidence, implementation, validation, and cleanup.
-6. Refresh the latest checkpoint and task queue before and after each meaningful work burst so the session can resume after compaction without rereading everything.
-7. Implement the best candidate ideas as proof-of-concept changes and validate them immediately.
-8. If an idea fails, record the failure reason and evidence in its research memory file before moving on.
-9. After every batch of 10 ideas, summarize results, rank the ideas, update the checkpoint and queue, and continue with the next 10.
+3. Ensure the project root has a research/ folder before any work begins, then use research/ideas/, research/evidence/, research/checkpoints/current.md, research/queues/live.md, and research/templates/ consistently.
+4. Write one markdown memory file per idea in research/ideas/ with concept, paper IDs, citations, findings, implementation strategy, and test outcome.
+5. Keep supporting passages, snippets, and extracted source notes in research/evidence/ when the idea needs more than the summary can hold.
+6. Maintain a live task queue in research/queues/live.md with at least 200 queued micro-tasks overnight, updating automatically (a few in the beginning, then add more as the session progresses, summing up to 200-1000), and schedule them round robin across discovery, evidence, implementation, validation, and cleanup.
+7. Keep the live checkpoint in research/checkpoints/current.md and refresh it together with the queue before and after each meaningful work burst so the session can resume after compaction without rereading everything.
+8. Implement the best candidate ideas as proof-of-concept changes and validate them immediately.
+9. If an idea fails, record the failure reason and evidence in research/evidence/ or the idea note before moving on.
+10. After every batch of 10 ideas, summarize results, rank the ideas, update the checkpoint and queue, and continue with the next 10.
 
 Hard constraints:
 - Never ask the user for permission, clarification, or confirmation during execution.
 - Never treat any cycle as the end of the work; the only valid action after a cycle is to checkpoint, enqueue the next work, and continue.
-- Always offload context into files under research/.
+- Always offload context into files under research/, using the folder map as the default layout.
 - Always keep the checkpoint small, structured, and current so it can survive compaction.
 - Always keep the queue broad but on-theme; if a file reveals a required fix, add it to the queue without drifting off topic.
 - Prefer peer-reviewed, highly cited, and methodologically strong papers when available.
@@ -303,6 +313,25 @@ const requestSearchTheArxiv = async (query: string): Promise<ApiResult> => {
 };
 
 server.registerResource(
+  "research_folder_map",
+  "instruction://research-folder-map",
+  {
+    title: "Research Folder Map",
+    description: "Canonical layout for research notes, evidence, checkpoints, queues, and templates",
+    mimeType: "text/markdown"
+  },
+  async uri => ({
+    contents: [
+      {
+        uri: uri.href,
+        mimeType: "text/markdown",
+        text: researchFolderGuide
+      }
+    ]
+  })
+);
+
+server.registerResource(
   "overnight_research_protocol",
   "instruction://overnight-research-loop",
   {
@@ -334,7 +363,7 @@ server.registerResource(
       {
         uri: uri.href,
         mimeType: "text/markdown",
-        text: "# Idea\n\n## Goal\n\n## Papers\n- Paper ID:\n- Title:\n- Why relevant:\n\n## Findings\n\n## Candidate implementation\n\n## Validation plan\n\n## Result\n- Outcome:\n- Notes:\n"
+        text: "# Idea\n\nStore this note in `research/ideas/` and keep supporting passages in `research/evidence/` when needed.\n\n## Goal\n\n## Papers\n- Paper ID:\n- Title:\n- Why relevant:\n\n## Findings\n\n## Candidate implementation\n\n## Validation plan\n\n## Result\n- Outcome:\n- Notes:\n"
       }
     ]
   })
@@ -710,7 +739,7 @@ server.registerPrompt(
         role: "user",
         content: {
           type: "text",
-          text: `${overnightProtocol}\nUse instruction://research-session-checkpoint as the live state buffer and instruction://research-task-queue as the live work queue.\nProject goal: ${goal || "Improve project quality with evidence-driven implementations."}`
+          text: `${overnightProtocol}\nUse instruction://research-folder-map as the layout reference, instruction://research-session-checkpoint as the live state buffer, and instruction://research-task-queue as the live work queue.\nProject goal: ${goal || "Improve project quality with evidence-driven implementations."}`
         }
       }
     ]

@@ -24,6 +24,7 @@ The server is designed for restartable long sessions rather than literal infinit
 - Write one `research/` memory file per idea.
 - Refresh the checkpoint after meaningful progress and before large task switches.
 - Treat compaction or timeout as a normal pause, then resume from the checkpoint and queue.
+- Use `research/ideas/` for per-idea notes, `research/evidence/` for supporting passages, `research/checkpoints/current.md` for the live state, `research/queues/live.md` for the work queue, and `research/templates/` for reusable forms.
 
 ## Build and run
 
