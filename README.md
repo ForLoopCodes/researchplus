@@ -5,14 +5,11 @@ MCP server for autonomous overnight research loops.
 ## What this server exposes
 
 - `search_literature`: queries searchthearxiv for relevance-ranked paper discovery.
-- `get_paper_details`: fetches `/paper/{paper_id}` details and abstracts.
-- `get_paper_batch`: fetches multiple papers at once via `/paper/batch`.
-- `search_snippets`: searches `snippet/search` for exact evidence passages.
-- `traverse_citations`: traverses `/paper/{paper_id}/citations` or `/paper/{paper_id}/references`.
 - `instruction://overnight-research-loop`: strict loop protocol resource for coding agents.
 - `instruction://research-memory-template`: markdown template for research memory files.
 - `instruction://research-session-checkpoint`: compact live state buffer for compaction-safe continuation.
 - `instruction://research-task-queue`: round-robin task queue for long-running sessions.
+- `instruction://research-stop-condition`: bounded pause and resume guidance for exact stop targets.
 - `overnight_research_bootstrap`: reusable MCP prompt to start the loop.
 
 ## Long-running loop pattern

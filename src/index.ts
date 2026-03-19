@@ -45,14 +45,16 @@ type SearchTheArxivResult = {
   authors?: SearchTheArxivAuthor[];
 };
 
-const defaultBaseUrl = "https://api.semanticscholar.org/graph/v1";
-const apiBaseUrl = process.env.SEMANTIC_SCHOLAR_BASE_URL?.trim() || defaultBaseUrl;
-const cacheTtlMs = Number(process.env.SEMANTIC_SCHOLAR_CACHE_TTL_MS || "1800000");
-const apiKey = process.env.SEMANTIC_SCHOLAR_API_KEY?.trim() || "";
+type SearchTheArxivToolData = {
+  requestedQuery: string;
+  queryUsed: string;
+  attemptedQueries: string[];
+  payload: SearchTheArxivResult;
+};
+
 const searchTheArxivBaseUrl = process.env.SEARCH_THE_ARXIV_BASE_URL?.trim() || "https://searchthearxiv.com/search";
-const defaultPaperFields = "paperId,corpusId,title,abstract,authors,year,citationCount,referenceCount,url,venue,publicationDate";
-const defaultLinkFields = "title,abstract,authors,year,citationCount,isInfluential,contexts,intents";
-const cache = new Map<string, CacheEntry>();
+const searchTheArxivCacheTtlMs = Number(process.env.SEARCH_THE_ARXIV_CACHE_TTL_MS || "1800000");
+const searchTheArxivCache = new Map<string, CacheEntry>();
 const apiRetryCount = 3;
 const apiRetryBaseDelayMs = 1000;
 
@@ -125,6 +127,14 @@ const taskQueueTemplate = `# Research Task Queue
 ## Resume note
 `;
 
+const stopConditionGuide = `# Research Stop Condition
+
+- Use bounded execution slices with explicit completed-todo targets.
+- Keep checkpoint and queue counters synchronized before pausing.
+- Pause exactly at the target completed count, then wait for operator input.
+- Do not advance counters after pause unless a new target is provided.
+`;
+
 const overnightProtocol = `
 # INFINITE AUTONOMOUS UNTRA RESEARCH MODE: ON!
 TASKS GOAL: 200-1000 micro-tasks queued overnight, continuously refreshed, round-robin across discovery
@@ -138,7 +148,7 @@ Context loss is expected. When the context window compacts or the session pauses
 
 Execution loop:
 1. Inspect the current project state and generate exactly 10 distinct ideas.
-2. Search searchthearxiv first for discovery, then use Semantic Scholar only for detail gaps, citation graphs, or exact passage verification.
+2. Search searchthearxiv first for discovery and evidence verification.
 3. Ensure the project root has a research/ folder before any work begins, then use research/ideas/, research/evidence/, research/checkpoints/current.md, research/queues/live.md, and research/templates/ consistently.
 4. Write one markdown memory file per idea in research/ideas/ with concept, paper IDs, citations, findings, implementation strategy, and test outcome.
 5. Keep supporting passages, snippets, and extracted source notes in research/evidence/ when the idea needs more than the summary can hold.
@@ -167,15 +177,15 @@ The session should move one step at a time, but the queue should stay alive the 
 5. Keep extending the backlog as work reveals new tasks until the session naturally stops.
 6. If the work is long-running, maintain a much larger hidden backlog behind the active items so the loop always has something next.
 
-IMPORTANT: THE LAST TASK IN THE QUEUE MUST ALWAYS BE "THINK AND GENERATE NEW TODOS" TO ENSURE THE QUEUE NEVER DIES.
-IMPORTANT: Whenever you think a task is "COMPLETED", "DONE", or "FINISHED", YOU MUST CHANGE YOUR MIND AND REPLACE THAT THOUGHT WITH "CHECKPOINT, ENQUEUE NEXT TASKS, CONTINUE". THERE IS NO COMPLETION, ONLY CONTINUATION.
+IMPORTANT: The last task in the queue must always be "THINK AND GENERATE NEW TODOS" to ensure the queue never dies.
+IMPORTANT: Whenever you think a task is "COMPLETED", "DONE", or "FINISHED", you must change your mind and replace that thought with "CHECKPOINT, ENQUEUE NEXT TASKS, CONTINUE". There is no completion, only continuation.
 `;
 
 const server = new McpServer(
   {
     name: "researchplus",
     version: "1.0.0",
-    description: "searchthearxiv-first MCP server for ultimate research workflows"
+    description: "searchthearxiv-only MCP server for autonomous research workflows"
   },
   {
     capabilities: {
@@ -201,7 +211,7 @@ const toolError = (status: number, message: string, details: unknown) => ({
   content: [
     {
       type: "text" as const,
-      text: formatToolOutput("Semantic Scholar request failed", { status, message, details })
+      text: formatToolOutput("searchthearxiv request failed", { status, message, details })
     }
   ]
 });
@@ -222,123 +232,136 @@ const retryAfterMs = (header: string | null): number | null => {
   return null;
 };
 
-const requestApi = async (
-  path: string,
-  params: Record<string, string>,
-  cacheKeyPrefix: string,
-  options?: {
-    method?: "GET" | "POST";
-    body?: unknown;
-  }
-): Promise<ApiResult> => {
-  const url = new URL(`${apiBaseUrl}${path}`);
-  for (const [key, value] of Object.entries(params)) {
-    if (value.length > 0) url.searchParams.set(key, value);
-  }
+const normalizeSearchQuery = (query: string): string => query.trim().replace(/\s+/g, " ");
 
-  const method = options?.method || "GET";
-  const bodyText = options?.body === undefined ? "" : JSON.stringify(options.body);
-  const cacheKey = `${cacheKeyPrefix}:${method}:${url.toString()}:${bodyText}`;
-  const cached = cache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) return { ok: true, data: cached.data, fromCache: true };
+const buildSearchQueryVariants = (query: string): string[] => {
+  const normalized = normalizeSearchQuery(query);
+  const variants = [
+    normalized,
+    normalized.replace(/\s+/g, "+"),
+    `${normalized} llm agent`,
+    `${normalized} benchmark`
+  ];
 
-  const headers: Record<string, string> = { accept: "application/json" };
-  if (apiKey && apiKey !== "replace_with_your_api_key") headers["x-api-key"] = apiKey;
-  if (bodyText) headers["content-type"] = "application/json";
+  return Array.from(new Set(variants.map(variant => normalizeSearchQuery(variant)).filter(variant => variant.length > 0)));
+};
 
-  for (let attempt = 0; attempt <= apiRetryCount; attempt += 1) {
+const parseSearchTheArxivResponse = (details: unknown): SearchTheArxivResult => {
+  if (details && typeof details === "object") return details as SearchTheArxivResult;
+  if (typeof details !== "string") return {};
+
+  const parseCandidate = (candidate: string): SearchTheArxivResult | null => {
     try {
-      const response = await fetch(url, {
-        headers,
-        method,
-        body: bodyText || undefined
-      });
-      const isJson = (response.headers.get("content-type") || "").toLowerCase().includes("application/json");
-      const details = isJson ? (await response.json()) as unknown : await response.text();
-
-      if (!response.ok) {
-        if (attempt < apiRetryCount && [429, 502, 503, 504].includes(response.status)) {
-          const delayMs = retryAfterMs(response.headers.get("retry-after")) ?? Math.min(8000, apiRetryBaseDelayMs * 2 ** attempt);
-          await sleep(delayMs);
-          continue;
-        }
-
-        return {
-          ok: false,
-          status: response.status,
-          message: toErrorMessage(details, `HTTP ${response.status}`),
-          details
-        };
-      }
-
-      cache.set(cacheKey, { data: details, expiresAt: Date.now() + (Number.isFinite(cacheTtlMs) ? cacheTtlMs : 1800000) });
-      return { ok: true, data: details, fromCache: false };
-    } catch (error) {
-      if (attempt < apiRetryCount) {
-        await sleep(Math.min(8000, apiRetryBaseDelayMs * 2 ** attempt));
-        continue;
-      }
-
-      const message = error instanceof Error ? error.message : "Unknown network error";
-      return { ok: false, status: 0, message, details: error };
+      const parsed = JSON.parse(candidate) as unknown;
+      return parsed && typeof parsed === "object" ? parsed as SearchTheArxivResult : null;
+    } catch {
+      return null;
     }
-  }
-
-  return {
-    ok: false,
-    status: 0,
-    message: "Request retries exhausted",
-    details: { url: url.toString() }
   };
+
+  const trimmed = details.trim();
+  if (!trimmed) return {};
+
+  const parsedDirect = parseCandidate(trimmed);
+  if (parsedDirect) return parsedDirect;
+
+  const jsonStart = trimmed.indexOf("{");
+  const jsonEnd = trimmed.lastIndexOf("}");
+  if (jsonStart < 0 || jsonEnd <= jsonStart) return {};
+
+  return parseCandidate(trimmed.slice(jsonStart, jsonEnd + 1)) || {};
+};
+
+const hasSearchResults = (payload: SearchTheArxivResult): boolean => {
+  const papers = Array.isArray(payload.papers) ? payload.papers : [];
+  const authors = Array.isArray(payload.authors) ? payload.authors : [];
+  return papers.length > 0 || authors.length > 0;
 };
 
 const requestSearchTheArxiv = async (query: string): Promise<ApiResult> => {
-  const url = new URL(searchTheArxivBaseUrl);
-  url.searchParams.set("query", query);
+  const attemptedQueries = buildSearchQueryVariants(query);
+  let lastFailure: ApiFailure | null = null;
 
-  const cacheKey = `searchthearxiv:${url.toString()}`;
-  const cached = cache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) return { ok: true, data: cached.data, fromCache: true };
+  for (let queryIndex = 0; queryIndex < attemptedQueries.length; queryIndex += 1) {
+    const queryVariant = attemptedQueries[queryIndex];
+    const isLastVariant = queryIndex === attemptedQueries.length - 1;
+    const url = new URL(searchTheArxivBaseUrl);
+    url.searchParams.set("query", queryVariant);
 
-  for (let attempt = 0; attempt <= apiRetryCount; attempt += 1) {
-    try {
-      const response = await fetch(url, { headers: { accept: "application/json" } });
-      const isJson = (response.headers.get("content-type") || "").toLowerCase().includes("application/json");
-      const details = isJson ? (await response.json()) as unknown : await response.text();
+    const cacheKey = `searchthearxiv:${url.toString()}`;
+    const cached = searchTheArxivCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      const payload = parseSearchTheArxivResponse(cached.data);
+      if (hasSearchResults(payload) || isLastVariant) {
+        return {
+          ok: true,
+          data: {
+            requestedQuery: query,
+            queryUsed: queryVariant,
+            attemptedQueries,
+            payload
+          },
+          fromCache: true
+        };
+      }
+    }
 
-      if (!response.ok) {
-        if (attempt < apiRetryCount && [429, 502, 503, 504].includes(response.status)) {
-          const delayMs = retryAfterMs(response.headers.get("retry-after")) ?? Math.min(8000, apiRetryBaseDelayMs * 2 ** attempt);
-          await sleep(delayMs);
+    for (let attempt = 0; attempt <= apiRetryCount; attempt += 1) {
+      try {
+        const response = await fetch(url, { headers: { accept: "application/json" } });
+        const isJson = (response.headers.get("content-type") || "").toLowerCase().includes("application/json");
+        const details = isJson ? (await response.json()) as unknown : await response.text();
+
+        if (!response.ok) {
+          if (attempt < apiRetryCount && [429, 502, 503, 504].includes(response.status)) {
+            const delayMs = retryAfterMs(response.headers.get("retry-after")) ?? Math.min(8000, apiRetryBaseDelayMs * 2 ** attempt);
+            await sleep(delayMs);
+            continue;
+          }
+
+          lastFailure = {
+            ok: false,
+            status: response.status,
+            message: toErrorMessage(details, `HTTP ${response.status}`),
+            details
+          };
+          break;
+        }
+
+        const payload = parseSearchTheArxivResponse(details);
+        searchTheArxivCache.set(cacheKey, { data: payload, expiresAt: Date.now() + (Number.isFinite(searchTheArxivCacheTtlMs) ? searchTheArxivCacheTtlMs : 1800000) });
+        if (hasSearchResults(payload) || isLastVariant) {
+          return {
+            ok: true,
+            data: {
+              requestedQuery: query,
+              queryUsed: queryVariant,
+              attemptedQueries,
+              payload
+            },
+            fromCache: false
+          };
+        }
+
+        break;
+      } catch (error) {
+        if (attempt < apiRetryCount) {
+          await sleep(Math.min(8000, apiRetryBaseDelayMs * 2 ** attempt));
           continue;
         }
 
-        return {
-          ok: false,
-          status: response.status,
-          message: toErrorMessage(details, `HTTP ${response.status}`),
-          details
-        };
+        const message = error instanceof Error ? error.message : "Unknown network error";
+        lastFailure = { ok: false, status: 0, message, details: error };
       }
-
-      cache.set(cacheKey, { data: details, expiresAt: Date.now() + (Number.isFinite(cacheTtlMs) ? cacheTtlMs : 1800000) });
-      return { ok: true, data: details, fromCache: false };
-    } catch (error) {
-      if (attempt < apiRetryCount) {
-        await sleep(Math.min(8000, apiRetryBaseDelayMs * 2 ** attempt));
-        continue;
-      }
-
-      const message = error instanceof Error ? error.message : "Unknown network error";
-      return { ok: false, status: 0, message, details: error };
     }
   }
 
+  if (lastFailure) return lastFailure;
   return {
     ok: false,
     status: 0,
     message: "Request retries exhausted",
-    details: { url: url.toString() }
+    details: { query }
   };
 };
 
@@ -437,6 +460,25 @@ server.registerResource(
   })
 );
 
+server.registerResource(
+  "research_stop_condition",
+  "instruction://research-stop-condition",
+  {
+    title: "Research Stop Condition",
+    description: "Bounded execution slice and exact-count pause guidance",
+    mimeType: "text/markdown"
+  },
+  async uri => ({
+    contents: [
+      {
+        uri: uri.href,
+        mimeType: "text/markdown",
+        text: stopConditionGuide
+      }
+    ]
+  })
+);
+
 server.registerTool(
   "search_literature",
   {
@@ -445,30 +487,15 @@ server.registerTool(
     inputSchema: z.object({
       query: z.string().min(1),
       limit: z.number().int().min(1).max(100).optional(),
-      offset: z.number().int().min(0).optional(),
-      fields: z.string().min(1).optional(),
-      minCitationCount: z.number().int().min(0).optional(),
-      year: z.string().optional(),
-      publicationTypes: z.string().optional(),
-      fieldsOfStudy: z.string().optional(),
-      openAccessPdf: z.boolean().optional()
+      offset: z.number().int().min(0).optional()
     })
   },
-  async ({
-    query,
-    limit,
-    offset,
-    fields,
-    minCitationCount,
-    year,
-    publicationTypes,
-    fieldsOfStudy,
-    openAccessPdf
-  }) => {
+  async ({ query, limit, offset }) => {
     const result = await requestSearchTheArxiv(query);
     if (!result.ok) return toolError(result.status, result.message, result.details);
 
-    const payload = result.data as SearchTheArxivResult;
+    const payloadRoot = result.data as SearchTheArxivToolData;
+    const payload = payloadRoot.payload;
     const papers = Array.isArray(payload.papers) ? payload.papers : [];
     const authors = Array.isArray(payload.authors) ? payload.authors : [];
     const paperStart = Math.max(0, offset ?? 0);
@@ -495,6 +522,9 @@ server.registerTool(
     }));
     const normalized = {
       query,
+      queryUsed: payloadRoot.queryUsed,
+      attemptedQueries: payloadRoot.attemptedQueries,
+      fallbackUsed: payloadRoot.queryUsed !== query,
       total: papers.length,
       offset: paperStart,
       next: paperEnd < papers.length ? paperEnd : null,
@@ -521,239 +551,6 @@ server.registerTool(
   }
 );
 
-server.registerTool(
-  "get_paper_details",
-  {
-    title: "Get Paper Details",
-    description: "Fetch detailed metadata and abstract for a specific paper ID",
-    inputSchema: z.object({
-      paperId: z.string().min(1),
-      fields: z.string().min(1).optional()
-    })
-  },
-  async ({ paperId, fields }) => {
-    const params: Record<string, string> = {
-      fields: fields || defaultPaperFields
-    };
-
-    const result = await requestApi(`/paper/${encodeURIComponent(paperId)}`, params, "paper-details");
-    if (!result.ok) return toolError(result.status, result.message, result.details);
-
-    const payload = result.data as Record<string, unknown>;
-    const normalized = {
-      paperId,
-      title: payload.title ?? null,
-      year: payload.year ?? null,
-      citationCount: payload.citationCount ?? null,
-      referenceCount: payload.referenceCount ?? null,
-      fromCache: result.fromCache,
-      paper: payload
-    };
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: `Fetched paper details for ${paperId}`
-        },
-        {
-          type: "text" as const,
-          text: formatToolOutput("get_paper_details payload", normalized)
-        }
-      ],
-      structuredContent: normalized
-    };
-  }
-);
-
-server.registerTool(
-  "get_paper_batch",
-  {
-    title: "Get Paper Batch",
-    description: "Fetch detailed metadata for multiple papers at once",
-    inputSchema: z.object({
-      paperIds: z.array(z.string().min(1)).min(1).max(500),
-      fields: z.string().min(1).optional()
-    })
-  },
-  async ({ paperIds, fields }) => {
-    const params: Record<string, string> = {
-      fields: fields || defaultPaperFields
-    };
-
-    const result = await requestApi("/paper/batch", params, "paper-batch", {
-      method: "POST",
-      body: { ids: paperIds }
-    });
-    if (!result.ok) return toolError(result.status, result.message, result.details);
-
-    const papers = Array.isArray(result.data) ? result.data : [];
-    const normalized = {
-      count: papers.length,
-      paperIds,
-      fromCache: result.fromCache,
-      papers
-    };
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: `Fetched ${papers.length} papers in batch`
-        },
-        {
-          type: "text" as const,
-          text: formatToolOutput("get_paper_batch payload", normalized)
-        }
-      ],
-      structuredContent: normalized
-    };
-  }
-);
-
-server.registerTool(
-  "search_snippets",
-  {
-    title: "Search Snippets",
-    description: "Search paper text snippets for exact evidence and supporting passages",
-    inputSchema: z.object({
-      query: z.string().min(1),
-      limit: z.number().int().min(1).max(1000).optional(),
-      fields: z.string().min(1).optional(),
-      paperIds: z.array(z.string().min(1)).min(1).max(100).optional(),
-      authors: z.array(z.string().min(1)).min(1).max(10).optional(),
-      minCitationCount: z.number().int().min(0).optional(),
-      insertedBefore: z.string().optional(),
-      publicationDateOrYear: z.string().optional(),
-      year: z.string().optional(),
-      venue: z.string().optional(),
-      fieldsOfStudy: z.string().optional()
-    })
-  },
-  async ({
-    query,
-    limit,
-    fields,
-    paperIds,
-    authors,
-    minCitationCount,
-    insertedBefore,
-    publicationDateOrYear,
-    year,
-    venue,
-    fieldsOfStudy
-  }) => {
-    const params: Record<string, string> = {
-      query,
-      limit: String(limit ?? 10),
-      fields: fields || "snippet.text,snippet.snippetKind"
-    };
-
-    if (paperIds) params.paperIds = paperIds.join(",");
-    if (authors) params.authors = authors.join(",");
-    if (typeof minCitationCount === "number") params.minCitationCount = String(minCitationCount);
-    if (insertedBefore) params.insertedBefore = insertedBefore;
-    if (publicationDateOrYear) params.publicationDateOrYear = publicationDateOrYear;
-    if (year) params.year = year;
-    if (venue) params.venue = venue;
-    if (fieldsOfStudy) params.fieldsOfStudy = fieldsOfStudy;
-
-    const result = await requestApi("/snippet/search", params, "snippet-search");
-    if (!result.ok) return toolError(result.status, result.message, result.details);
-
-    const payload = result.data as {
-      data?: unknown[];
-      retrievalVersion?: string;
-    };
-
-    const snippets = Array.isArray(payload.data) ? payload.data : [];
-    const normalized = {
-      query,
-      count: snippets.length,
-      retrievalVersion: payload.retrievalVersion ?? null,
-      fromCache: result.fromCache,
-      snippets
-    };
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: `Found ${snippets.length} snippet matches for query: ${query}`
-        },
-        {
-          type: "text" as const,
-          text: formatToolOutput("search_snippets payload", normalized)
-        }
-      ],
-      structuredContent: normalized
-    };
-  }
-);
-
-server.registerTool(
-  "traverse_citations",
-  {
-    title: "Traverse Citations",
-    description: "Traverse citation or reference graph for a given paper ID",
-    inputSchema: z.object({
-      paperId: z.string().min(1),
-      direction: z.enum(["citations", "references"]),
-      limit: z.number().int().min(1).max(1000).optional(),
-      offset: z.number().int().min(0).optional(),
-      fields: z.string().min(1).optional(),
-      publicationDateOrYear: z.string().optional()
-    })
-  },
-  async ({ paperId, direction, limit, offset, fields, publicationDateOrYear }) => {
-    const params: Record<string, string> = {
-      limit: String(limit ?? 100),
-      offset: String(offset ?? 0),
-      fields: fields || defaultLinkFields
-    };
-
-    if (publicationDateOrYear) params.publicationDateOrYear = publicationDateOrYear;
-
-    const result = await requestApi(
-      `/paper/${encodeURIComponent(paperId)}/${direction}`,
-      params,
-      `paper-${direction}`
-    );
-    if (!result.ok) return toolError(result.status, result.message, result.details);
-
-    const payload = result.data as {
-      offset?: number;
-      next?: number;
-      data?: unknown[];
-    };
-
-    const links = Array.isArray(payload.data) ? payload.data : [];
-    const normalized = {
-      paperId,
-      direction,
-      offset: payload.offset ?? 0,
-      next: payload.next ?? null,
-      count: links.length,
-      fromCache: result.fromCache,
-      links
-    };
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: `Fetched ${links.length} ${direction} for ${paperId}`
-        },
-        {
-          type: "text" as const,
-          text: formatToolOutput(`traverse_citations payload (${direction})`, normalized)
-        }
-      ],
-      structuredContent: normalized
-    };
-  }
-);
-
 server.registerPrompt(
   "overnight_research_bootstrap",
   {
@@ -770,7 +567,7 @@ server.registerPrompt(
         role: "user",
         content: {
           type: "text",
-          text: `${overnightProtocol}\nUse instruction://research-folder-map as the layout reference, instruction://research-session-checkpoint as the live state buffer, and instruction://research-task-queue as the live work queue.\nProject goal: ${goal || "Improve project quality with evidence-driven implementations."}${typeof stopAtCompletedTodos === "number" ? `\nOperator stop condition: stop at exactly ${stopAtCompletedTodos} completed todos, write the checkpoint, and pause for the next operator instruction.` : ""}`
+          text: `${overnightProtocol}\nUse instruction://research-folder-map as the layout reference, instruction://research-session-checkpoint as the live state buffer, instruction://research-task-queue as the live work queue, and instruction://research-stop-condition for exact pause behavior.\nProject goal: ${goal || "Improve project quality with evidence-driven implementations."}${typeof stopAtCompletedTodos === "number" ? `\nOperator stop condition: stop at exactly ${stopAtCompletedTodos} completed todos, write the checkpoint, and pause for the next operator instruction.` : ""}`
         }
       }
     ]

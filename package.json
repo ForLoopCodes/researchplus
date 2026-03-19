@@ -1,7 +1,7 @@
 {
   "name": "researchplus",
   "version": "1.0.0",
-  "description": "Semantic Scholar MCP server for autonomous research workflows",
+  "description": "MCP server for autonomous research workflows",
   "main": "build/index.js",
   "bin": {
     "researchplus": "./build/index.js"

@@ -14,7 +14,7 @@ Context loss is expected. When the context window compacts or the session pauses
 
 Execution loop:
 1. Inspect the current project state and generate exactly 10 distinct ideas.
-2. Search searchthearxiv first for discovery, then use Semantic Scholar only for detail gaps, citation graphs, or exact passage verification.
+2. Search searchthearxiv first for discovery and evidence verification.
 3. Ensure the project root has a research/ folder before any work begins, then use research/ideas/, research/evidence/, research/checkpoints/current.md, research/queues/live.md, and research/templates/ consistently.
 4. Write one markdown memory file per idea in research/ideas/ with concept, paper IDs, citations, findings, implementation strategy, and test outcome.
 5. Keep supporting passages, snippets, and extracted source notes in research/evidence/ when the idea needs more than the summary can hold.
