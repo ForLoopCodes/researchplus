@@ -6,6 +6,13 @@
 
 ## Next item
 
+## Todo progress
+
+- Target completed todos:
+- Completed todos:
+- Remaining todos:
+- Stop condition reached:
+
 ## Theme
 
 ## Round robin lanes

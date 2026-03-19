@@ -2,6 +2,12 @@
 
 ## Goal
 
+## Todo target
+
+- Stop at completed todos:
+- Completed todos:
+- Remaining todos:
+
 ## Current focus
 
 ## Last completed step

@@ -69,6 +69,11 @@ const checkpointTemplate = `# Research Session Checkpoint
 
 ## Goal
 
+## Todo target
+- Stop at completed todos:
+- Completed todos:
+- Remaining todos:
+
 ## Current focus
 
 ## Last completed step
@@ -91,6 +96,12 @@ const taskQueueTemplate = `# Research Task Queue
 ## Completed item
 
 ## Next item
+
+## Todo progress
+- Target completed todos:
+- Completed todos:
+- Remaining todos:
+- Stop condition reached:
 
 ## Theme
 
@@ -146,7 +157,6 @@ Hard constraints:
 - Prefer peer-reviewed, highly cited, and methodologically strong papers when available.
 - Reject unsupported claims and document evidence before implementation.
 - Keep iterating until explicitly stopped.
-
 
 ## Task Queue Discipline
 The session should move one step at a time, but the queue should stay alive the entire time.
@@ -750,16 +760,17 @@ server.registerPrompt(
     title: "Ultimate Research Bootstrap",
     description: "Prompt template for kicking off the compaction-safe research loop",
     argsSchema: {
-      goal: z.string().optional()
+      goal: z.string().optional(),
+      stopAtCompletedTodos: z.number().int().min(1).optional()
     }
   },
-  ({ goal }) => ({
+  ({ goal, stopAtCompletedTodos }) => ({
     messages: [
       {
         role: "user",
         content: {
           type: "text",
-          text: `${overnightProtocol}\nUse instruction://research-folder-map as the layout reference, instruction://research-session-checkpoint as the live state buffer, and instruction://research-task-queue as the live work queue.\nProject goal: ${goal || "Improve project quality with evidence-driven implementations."}`
+          text: `${overnightProtocol}\nUse instruction://research-folder-map as the layout reference, instruction://research-session-checkpoint as the live state buffer, and instruction://research-task-queue as the live work queue.\nProject goal: ${goal || "Improve project quality with evidence-driven implementations."}${typeof stopAtCompletedTodos === "number" ? `\nOperator stop condition: stop at exactly ${stopAtCompletedTodos} completed todos, write the checkpoint, and pause for the next operator instruction.` : ""}`
         }
       }
     ]
