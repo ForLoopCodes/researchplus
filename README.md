@@ -15,10 +15,6 @@ MCP server for autonomous overnight research loops.
 - `instruction://research-task-queue`: round-robin task queue for long-running sessions.
 - `overnight_research_bootstrap`: reusable MCP prompt to start the loop.
 
-The request layer retries transient 429, 502, 503, and 504 responses with exponential backoff and honors `Retry-After` when present.
-
-`search_literature` now uses searchthearxiv for discovery, while paper detail and citation tools still use Semantic Scholar for deeper metadata and graph traversal.
-
 ## Long-running loop pattern
 
 The server is designed for restartable long sessions rather than literal infinite execution in one context window.
@@ -28,12 +24,6 @@ The server is designed for restartable long sessions rather than literal infinit
 - Write one `research/` memory file per idea.
 - Refresh the checkpoint after meaningful progress and before large task switches.
 - Treat compaction or timeout as a normal pause, then resume from the checkpoint and queue.
-
-## Environment
-
-Copy `.env.example` to `.env` and set `SEMANTIC_SCHOLAR_API_KEY` when available.
-
-Unauthenticated requests also work with lower service limits from Semantic Scholar.
 
 ## Build and run
 
