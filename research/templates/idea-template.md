@@ -3,6 +3,7 @@
 ## Goal
 
 ## Papers
+
 - Paper ID:
 - Title:
 - Why relevant:
@@ -14,5 +15,6 @@
 ## Validation plan
 
 ## Result
+
 - Outcome:
 - Notes:
