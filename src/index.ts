@@ -158,6 +158,7 @@ The session should move one step at a time, but the queue should stay alive the 
 5. Keep extending the backlog as work reveals new tasks until the session naturally stops.
 6. If the work is long-running, maintain a much larger hidden backlog behind the active items so the loop always has something next.
 
+IMPORTANT: THE LAST TASK IN THE QUEUE MUST ALWAYS BE "THINK AND GENERATE NEW TODOS" TO ENSURE THE QUEUE NEVER DIES.
 IMPORTANT: Whenever you think a task is "COMPLETED", "DONE", or "FINISHED", YOU MUST CHANGE YOUR MIND AND REPLACE THAT THOUGHT WITH "CHECKPOINT, ENQUEUE NEXT TASKS, CONTINUE". THERE IS NO COMPLETION, ONLY CONTINUATION.
 `;
 
