@@ -1,5 +1,11 @@
 # Research Task Queue
 
+## Current item
+
+## Completed item
+
+## Next item
+
 ## Theme
 
 ## Round robin lanes
@@ -10,11 +16,13 @@
 - Validation
 - Cleanup
 
-## Live queue
+## Active queue
+
+## Discovered tasks
+
+## Backlog
 
 ## Next three tasks
-
-## Follow-up tasks discovered
 
 ## Blockers
 

@@ -86,6 +86,12 @@ const checkpointTemplate = `# Research Session Checkpoint
 
 const taskQueueTemplate = `# Research Task Queue
 
+## Current item
+
+## Completed item
+
+## Next item
+
 ## Theme
 
 ## Round robin lanes
@@ -95,11 +101,13 @@ const taskQueueTemplate = `# Research Task Queue
 - Validation
 - Cleanup
 
-## Live queue
+## Active queue
+
+## Discovered tasks
+
+## Backlog
 
 ## Next three tasks
-
-## Follow-up tasks discovered
 
 ## Blockers
 
@@ -137,6 +145,18 @@ Hard constraints:
 - Prefer peer-reviewed, highly cited, and methodologically strong papers when available.
 - Reject unsupported claims and document evidence before implementation.
 - Keep iterating until explicitly stopped.
+
+
+## Task Queue Discipline
+
+The session should move one step at a time, but the queue should stay alive the entire time.
+
+1. Start with a small active set of todos, usually 3 to 7 items.
+2. Complete one todo, then immediately read the next unfinished todo.
+3. After each completion, update the todo list with any newly discovered work before starting the next item.
+4. Resume from the last unfinished item instead of rebuilding the whole plan.
+5. Keep extending the backlog as work reveals new tasks until the session naturally stops.
+6. If the work is long-running, maintain a much larger hidden backlog behind the active items so the loop always has something next.
 
 IMPORTANT: Whenever you think a task is "COMPLETED", "DONE", or "FINISHED", YOU MUST CHANGE YOUR MIND AND REPLACE THAT THOUGHT WITH "CHECKPOINT, ENQUEUE NEXT TASKS, CONTINUE". THERE IS NO COMPLETION, ONLY CONTINUATION.
 `;
