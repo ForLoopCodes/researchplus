@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "researchplus": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["./build/index.js"]
+    }
+  }
+}
